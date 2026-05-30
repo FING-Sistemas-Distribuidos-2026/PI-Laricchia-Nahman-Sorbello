@@ -1,4 +1,4 @@
-package com.tickets.compra_service;
+package com.tickets.compra;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;

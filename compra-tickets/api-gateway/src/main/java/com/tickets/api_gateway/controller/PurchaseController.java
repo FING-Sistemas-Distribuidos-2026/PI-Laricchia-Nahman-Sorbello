@@ -4,6 +4,7 @@ import com.tickets.api_gateway.client.PurchaseClient;
 import com.tickets.api_gateway.dto.response.ExpireResponse;
 import com.tickets.api_gateway.dto.response.PurchaseResponse;
 import com.tickets.api_gateway.dto.request.PurchaseRequest;
+import com.tickets.api_gateway.dto.response.QueueActivationResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -13,6 +14,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.UUID;
 
 /**
  * Controlador público de compras.
@@ -59,4 +62,13 @@ public class PurchaseController {
         ExpireResponse response = purchaseClient.expire(userId);
         return ResponseEntity.ok(response);
     }
+
+    @PostMapping("/queue/activate/{userId}")
+    public ResponseEntity<QueueActivationResponse> activate(
+            @PathVariable UUID userId) {
+        log.debug("ACTIVATE queue | userId={}", userId);
+        QueueActivationResponse response = purchaseClient.activate(userId);
+        return ResponseEntity.ok(response);
+    }
+
 }

@@ -1,5 +1,6 @@
 package com.tickets.api_gateway.client;
 import com.tickets.api_gateway.dto.response.JoinQueueResponse;
+import com.tickets.api_gateway.dto.response.QueueActivationResponse;
 import com.tickets.api_gateway.dto.response.QueueStatusResponse;
 import com.tickets.api_gateway.dto.request.JoinQueueRequest;
 import org.springframework.cloud.openfeign.FeignClient;
@@ -7,6 +8,8 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+
+import java.util.UUID;
 
 /**
  * Cliente Feign hacia queue-service (puerto 8081).
@@ -43,4 +46,15 @@ public interface QueueClient {
     @GetMapping("/api/queue/ttl/{userId}")
     QueueTtlResponse getTtl(@PathVariable("userId") String userId);
     */
+
+    /**
+     * Activa un usuario: lo mueve de WAITING a BUYING y reserva un ticket.
+     * Llamado por el Scheduler (y expuesto por el gateway por si el frontend lo necesita).
+     * POST queue-service/api/queue/activate/{userId}
+     * 200 → { userId, ticketId, status: "BUYING" }
+     * 404 → QueueEntry no encontrada
+     * 409 → usuario no está en WAITING, o no hay tickets disponibles
+     */
+    @PostMapping("/api/queue/activate/{userId}")
+    QueueActivationResponse activate(@PathVariable("userId") UUID userId);
 }

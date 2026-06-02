@@ -2,6 +2,7 @@ package com.tickets.api_gateway.controller;
 
 import com.tickets.api_gateway.client.QueueClient;
 import com.tickets.api_gateway.dto.response.JoinQueueResponse;
+import com.tickets.api_gateway.dto.response.QueueActivationResponse;
 import com.tickets.api_gateway.dto.response.QueueStatusResponse;
 import com.tickets.api_gateway.dto.request.JoinQueueRequest;
 import jakarta.validation.Valid;
@@ -14,6 +15,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.UUID;
 
 /**
  * Controlador público de cola virtual.
@@ -62,23 +65,23 @@ public class QueueController {
         return ResponseEntity.ok(response);
     }
 
-    // GET /api/queue/ttl/{userId}
 
-/*
-    *
-     * Devuelve el TTL (tiempo de vida) del slot del usuario en la cola.
+
+    // POST /api/queue/activate/{userId}
+    /**
+     * Mueve al usuario de WAITING a BUYING y reserva un ticket.
+     * 404 y 409 de queue-service se propagan tal cual al frontend.
      *
-     * @param userId identificador del usuario
-     * @return { ttl }
+     * @param userId UUID del usuario
+     * @return { userId, ticketId, status: "BUYING" }
+     */
+    @PostMapping("/activate/{userId}")
+    public ResponseEntity<QueueActivationResponse> activate(
+            @PathVariable UUID userId) {
 
-    @GetMapping("/ttl/{userId}")
-    public ResponseEntity<QueueTtlResponse> getTtl(
-            @PathVariable String userId) {
-
-        log.debug("TTL queue | userId={}", userId);
-        QueueTtlResponse response = queueClient.getTtl(userId);
+        log.debug("ACTIVATE queue | userId={}", userId);
+        QueueActivationResponse response = queueClient.activate(userId);
         return ResponseEntity.ok(response);
     }
-*/
 
 }

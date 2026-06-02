@@ -63,12 +63,5 @@ public class PurchaseController {
         return ResponseEntity.ok(response);
     }
 
-    @PostMapping("/queue/activate/{userId}")
-    public ResponseEntity<QueueActivationResponse> activate(
-            @PathVariable UUID userId) {
-        log.debug("ACTIVATE queue | userId={}", userId);
-        QueueActivationResponse response = purchaseClient.activate(userId);
-        return ResponseEntity.ok(response);
-    }
 
 }

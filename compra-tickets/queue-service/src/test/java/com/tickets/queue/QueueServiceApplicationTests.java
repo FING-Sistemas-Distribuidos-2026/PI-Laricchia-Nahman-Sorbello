@@ -1,4 +1,4 @@
-package com.tickets.queue_service;
+package com.tickets.queue;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;

@@ -106,13 +106,16 @@ public class PurchaseService {
     @Transactional
     public PurchaseResponseDTO expirePurchase(UUID userId) {
 
-        QueueEntry queueEntry = queueEntryRepository.findByUserId(userId)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND, "QueueEntry no encontrada para: " + userId));
+        QueueEntry queueEntry = queueEntryRepository.findByUserId(userId).orElse(null);
+        if (queueEntry == null) {
+            return PurchaseResponseDTO.builder()
+                    .userId(userId)
+                    .status("EXPIRED")
+                    .message("Ya procesado anteriormente.")
+                    .build();
+        }
 
-        // Idempotencia: estados terminales no se tocan
-        QueueStatus current = queueEntry.getStatus();
-        if (current == QueueStatus.EXPIRED || current == QueueStatus.PURCHASED) {
+        if (queueEntry.getStatus() == QueueStatus.PURCHASED) {
             return PurchaseResponseDTO.builder()
                     .userId(userId)
                     .status("EXPIRED")
@@ -137,10 +140,7 @@ public class PurchaseService {
                     purchaseRepository.save(purchase);
                 });
 
-        // QueueEntry -> EXPIRED (@PreUpdate maneja updatedAt)
-        queueEntry.setStatus(QueueStatus.EXPIRED);
-        queueEntryRepository.save(queueEntry);
-
+        queueEntryRepository.delete(queueEntry);
         // EventLog
         Map<String, Object> payload = new HashMap<>();
         payload.put("userId", userId.toString());

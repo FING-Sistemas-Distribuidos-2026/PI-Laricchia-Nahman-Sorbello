@@ -75,6 +75,8 @@ public class QueueController {
      * @param userId UUID del usuario
      * @return { userId, ticketId, status: "BUYING" }
      */
+/*
+
     @PostMapping("/activate/{userId}")
     public ResponseEntity<QueueActivationResponse> activate(
             @PathVariable UUID userId) {
@@ -83,5 +85,6 @@ public class QueueController {
         QueueActivationResponse response = queueClient.activate(userId);
         return ResponseEntity.ok(response);
     }
+*/
 
 }

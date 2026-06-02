@@ -2,6 +2,7 @@ package com.tickets.api_gateway.exception;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tickets.api_gateway.dto.response.ErrorResponse;
+import feign.FeignException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -101,5 +102,12 @@ public class GlobalExceptionHandler {
                     .origin(ex.getOrigin())
                     .build();
         }
+
+
+    }
+    
+    @ExceptionHandler(FeignException.class)
+    public ResponseEntity<Object> handleFeignException(FeignException ex) {
+        return ResponseEntity.status(ex.status()).body(ex.contentUTF8());
     }
 }

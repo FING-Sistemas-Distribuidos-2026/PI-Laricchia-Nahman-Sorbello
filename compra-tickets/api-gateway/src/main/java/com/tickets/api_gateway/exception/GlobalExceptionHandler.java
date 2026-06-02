@@ -105,7 +105,7 @@ public class GlobalExceptionHandler {
 
 
     }
-    
+
     @ExceptionHandler(FeignException.class)
     public ResponseEntity<Object> handleFeignException(FeignException ex) {
         return ResponseEntity.status(ex.status()).body(ex.contentUTF8());

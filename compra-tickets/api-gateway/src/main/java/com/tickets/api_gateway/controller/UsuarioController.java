@@ -36,16 +36,11 @@ public class UsuarioController {
      * @return { id, creadoEn } con HTTP 201 Created
      */
     @PostMapping
-    public ResponseEntity<UsuarioResponse> create(
-            @RequestBody(required = false) CreateUsuarioRequest request) {
-
+    public ResponseEntity<UsuarioResponse> create() {
         log.debug("CREATE usuario");
-        // Si el frontend no manda body, usamos un objeto vacío
-        CreateUsuarioRequest body = request != null ? request : new CreateUsuarioRequest();
         UsuarioResponse response = purchaseClient.createUsuario();
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
-
     // ── GET /api/usuarios/{id} ────────────────────────────────────────────
 
     /**

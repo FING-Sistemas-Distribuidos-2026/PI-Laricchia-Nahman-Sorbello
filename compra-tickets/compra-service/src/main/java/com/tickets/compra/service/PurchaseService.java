@@ -1,5 +1,6 @@
 package com.tickets.compra.service;
 
+import com.tickets.compra.client.QueueServiceClient;
 import com.tickets.compra.dto.PurchaseResponseDTO;
 import com.tickets.compra.entity.EventLog;
 import com.tickets.compra.entity.Purchase;
@@ -28,16 +29,19 @@ public class PurchaseService {
     private final QueueEntryRepository queueEntryRepository;
     private final PurchaseRepository purchaseRepository;
     private final EventLogRepository eventLogRepository;
+    private final QueueServiceClient queueServiceClient;
 
     public PurchaseService(
             TicketRepository ticketRepository,
             QueueEntryRepository queueEntryRepository,
             PurchaseRepository purchaseRepository,
-            EventLogRepository eventLogRepository) {
+            EventLogRepository eventLogRepository,
+            QueueServiceClient queueServiceClient) {
         this.ticketRepository = ticketRepository;
         this.queueEntryRepository = queueEntryRepository;
         this.purchaseRepository = purchaseRepository;
         this.eventLogRepository = eventLogRepository;
+        this.queueServiceClient = queueServiceClient;
     }
 
     /**
@@ -90,6 +94,9 @@ public class PurchaseService {
         log.setPayload(payload);
         eventLogRepository.save(log);
 
+        // Notificar a queue-service para que limpie Redis (active:{userId}, waiting_queue, contadores)
+        queueServiceClient.cleanupRedis(userId);
+
         return PurchaseResponseDTO.builder()
                 .userId(userId)
                 .ticketId(ticketId)
@@ -141,6 +148,7 @@ public class PurchaseService {
                 });
 
         queueEntryRepository.delete(queueEntry);
+
         // EventLog
         Map<String, Object> payload = new HashMap<>();
         payload.put("userId", userId.toString());
@@ -150,6 +158,9 @@ public class PurchaseService {
         log.setEventType("PURCHASE_EXPIRED");
         log.setPayload(payload);
         eventLogRepository.save(log);
+
+        // Notificar a queue-service para que limpie Redis
+        queueServiceClient.cleanupRedis(userId);
 
         return PurchaseResponseDTO.builder()
                 .userId(userId)

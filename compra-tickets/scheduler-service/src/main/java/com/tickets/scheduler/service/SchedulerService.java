@@ -21,6 +21,7 @@ public class SchedulerService {
     private static final String WAITING_QUEUE_KEY = "waiting_queue";
     private static final String BUYING_COUNT_KEY  = "buying_count";
     private static final String WAITING_COUNT_KEY = "waiting_count";
+    private static final String BUYING_USERS_KEY  = "buying_users";
 
     private final RedisTemplate<String, String> redisTemplate;
     private final SystemParametersCache         paramsCache;
@@ -30,6 +31,7 @@ public class SchedulerService {
     public void procesarCola() {
 
         try {
+            limpiarExpirados();
             verificarIntegridadSesiones();
             int slotsLibres = calcularSlotsLibres();
             if (slotsLibres <= 0) {
@@ -91,6 +93,7 @@ public class SchedulerService {
                 redisTemplate.opsForValue().set(activeKey, payload, Duration.ofSeconds(ttl));
                 redisTemplate.opsForValue().increment(BUYING_COUNT_KEY);
                 redisTemplate.opsForValue().decrement(WAITING_COUNT_KEY);
+                redisTemplate.opsForSet().add(BUYING_USERS_KEY, userId.toString());
                 log.info("[Scheduler] {} activado. TicketId: {}. TTL: {}s",
                         userId, outcome.ticketId(), ttl);
                 return true;
@@ -138,7 +141,29 @@ public class SchedulerService {
             log.error("[Scheduler] Error verificación: {}", e.getMessage());
         }
     }*/
+    private void limpiarExpirados() {
+        try {
+            Set<String> buyingUsers = redisTemplate.opsForSet().members(BUYING_USERS_KEY);
+            if (buyingUsers == null || buyingUsers.isEmpty()) return;
 
+            for (String userIdStr : buyingUsers) {
+                String activeKey = "active:" + userIdStr;
+                Boolean exists = redisTemplate.hasKey(activeKey);
+                if (exists == null || !exists) {
+                    UUID userId = UUID.fromString(userIdStr);
+                    log.info("[Scheduler] Usuario {} expiró. Llamando a expire.", userId);
+                    boolean ok = compraClient.expireUser(userId);
+                    if (ok) {
+                        redisTemplate.opsForSet().remove(BUYING_USERS_KEY, userIdStr);
+                        redisTemplate.opsForValue().decrement(BUYING_COUNT_KEY);
+                        log.info("[Scheduler] {} limpiado correctamente.", userId);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.error("[Scheduler] Error limpiando expirados: {}", e.getMessage());
+        }
+    }
     //cambiosssssssssssssssssss
     private void verificarIntegridadSesiones() {
         try {

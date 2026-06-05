@@ -147,8 +147,10 @@ public class PurchaseService {
                     purchaseRepository.save(purchase);
                 });
 
-        queueEntryRepository.delete(queueEntry);
-
+        //queueEntryRepository.delete(queueEntry);
+        //no la borramos la marcamos como expired
+        queueEntry.setStatus(QueueStatus.EXPIRED);
+        queueEntryRepository.save(queueEntry);
         // EventLog
         Map<String, Object> payload = new HashMap<>();
         payload.put("userId", userId.toString());

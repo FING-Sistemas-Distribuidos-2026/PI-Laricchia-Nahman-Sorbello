@@ -7,7 +7,7 @@ import lombok.NoArgsConstructor;
 
 /**
  * Respuesta de POST /api/queue/join
- * Contrato: { userId, status, position }
+ * Contrato: { userId, status }
  */
 @Data
 @Builder
@@ -16,5 +16,4 @@ import lombok.NoArgsConstructor;
 public class JoinQueueResponse {
     private String userId;
     private String status;
-    //private Integer position;
 }

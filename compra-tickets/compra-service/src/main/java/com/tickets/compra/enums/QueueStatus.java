@@ -4,6 +4,5 @@ public enum QueueStatus {
     WAITING,
     BUYING,
     PURCHASED,
-    EXPIRED,
-    CANCELLED
+    EXPIRED
 }

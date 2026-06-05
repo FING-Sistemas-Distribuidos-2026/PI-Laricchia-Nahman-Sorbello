@@ -4,13 +4,12 @@
   <component name="MavenProjectsManager">
     <option name="originalFiles">
       <list>
+        <option value="$PROJECT_DIR$/compra-tickets/compra-service/pom.xml" />
         <option value="$PROJECT_DIR$/compra-tickets/api-gateway/pom.xml" />
         <option value="$PROJECT_DIR$/compra-tickets/queue-service/pom.xml" />
-        <option value="$PROJECT_DIR$/compra-tickets/compra-service/pom.xml" />
+        <option value="$PROJECT_DIR$/compra-tickets/scheduler-service/pom.xml" />
       </list>
     </option>
   </component>
-  <component name="ProjectRootManager" version="2" languageLevel="JDK_25" default="true" project-jdk-name="openjdk-25" project-jdk-type="JavaSDK">
-    <output url="file://$PROJECT_DIR$/out" />
-  </component>
+  <component name="ProjectRootManager" version="2" languageLevel="JDK_25" default="true" project-jdk-name="openjdk-25" project-jdk-type="JavaSDK" />
 </project>

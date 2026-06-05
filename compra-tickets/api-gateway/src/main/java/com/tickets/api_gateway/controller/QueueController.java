@@ -5,6 +5,7 @@ import com.tickets.api_gateway.dto.response.JoinQueueResponse;
 import com.tickets.api_gateway.dto.response.QueueActivationResponse;
 import com.tickets.api_gateway.dto.response.QueueStatusResponse;
 import com.tickets.api_gateway.dto.request.JoinQueueRequest;
+import com.tickets.api_gateway.dto.response.QueueTtlResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -66,7 +67,6 @@ public class QueueController {
     }
 
 
-
     // POST /api/queue/activate/{userId}
     /**
      * Mueve al usuario de WAITING a BUYING y reserva un ticket.
@@ -86,5 +86,21 @@ public class QueueController {
         return ResponseEntity.ok(response);
     }
 */
+
+    /**
+
+
+     Devuelve el TTL (tiempo de vida) del slot del usuario en la cola.*
+     @param userId identificador del usuario
+     @return { ttl }*/
+    @GetMapping("/ttl/{userId}")
+
+    public ResponseEntity<QueueTtlResponse> getTtl(@PathVariable String userId) {
+
+
+        log.debug("TTL queue | userId={}", userId);
+        QueueTtlResponse response = queueClient.getTtl(userId);
+        return ResponseEntity.ok(response);
+    }
 
 }

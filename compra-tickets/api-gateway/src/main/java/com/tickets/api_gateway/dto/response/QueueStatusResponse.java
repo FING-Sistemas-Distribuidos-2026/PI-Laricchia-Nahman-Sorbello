@@ -14,6 +14,11 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class QueueStatusResponse {
-    private String status;
+    private String  userId;
+    private String  status;
     private Integer position;
+    private Integer totalWaiting;
+    private Long    ticketId;
+    private Long    ttlRemaining;
+    private String  message;
 }

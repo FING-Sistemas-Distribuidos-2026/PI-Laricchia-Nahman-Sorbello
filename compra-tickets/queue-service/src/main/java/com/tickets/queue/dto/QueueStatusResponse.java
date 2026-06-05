@@ -14,7 +14,8 @@ public class QueueStatusResponse {
     private String  status;        // WAITING | BUYING | PURCHASED | EXPIRED | NOT_FOUND | REJECTED
     private Integer position;      // solo WAITING
     private Integer totalWaiting;  // solo WAITING
-    private String  ticketId;      // solo BUYING
+    private Long    ticketId;
+    //private String  ticketId;      // solo BUYING
     private Long    ttlRemaining;  // solo BUYING (segundos)
     private String  message;       // legible para el frontend
     // true solo cuando el usuario ACABA de entrar a la cola ahora mismo

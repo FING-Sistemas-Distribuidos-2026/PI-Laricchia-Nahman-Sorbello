@@ -4,5 +4,6 @@
     <file url="file://$PROJECT_DIR$/compra-tickets/api-gateway/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/compra-tickets/compra-service/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/compra-tickets/queue-service/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/compra-tickets/scheduler-service/src/main/java" charset="UTF-8" />
   </component>
 </project>

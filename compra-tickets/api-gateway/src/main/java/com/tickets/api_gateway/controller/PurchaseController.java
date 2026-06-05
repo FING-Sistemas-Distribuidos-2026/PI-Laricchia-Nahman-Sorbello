@@ -1,6 +1,7 @@
 package com.tickets.api_gateway.controller;
 
 import com.tickets.api_gateway.client.PurchaseClient;
+import com.tickets.api_gateway.client.QueueClient;
 import com.tickets.api_gateway.dto.response.ExpireResponse;
 import com.tickets.api_gateway.dto.response.PurchaseResponse;
 import com.tickets.api_gateway.dto.request.PurchaseRequest;
@@ -29,9 +30,8 @@ import java.util.UUID;
 public class PurchaseController {
 
     private final PurchaseClient purchaseClient;
-
+    private final QueueClient queueClient;
     //POST /api/purchase
-
     /**
      * Ejecuta la compra de una entrada.
      *
@@ -54,14 +54,19 @@ public class PurchaseController {
      * @param userId identificador del usuario
      * @return { status: "EXPIRED" }
      */
-    @PostMapping("/expire/{userId}")
-    public ResponseEntity<ExpireResponse> expire(
-            @PathVariable String userId) {
 
-        log.debug("EXPIRE purchase | userId={}", userId);
+    // En el PurchaseController del gateway, método expire:
+    @PostMapping("/expire/{userId}")
+    public ResponseEntity<ExpireResponse> expire(@PathVariable String userId) {
         ExpireResponse response = purchaseClient.expire(userId);
+        // Limpiar Redis via queue-service
+        try {
+            queueClient.removeFromQueue(userId);
+        } catch (Exception e) {
+            // No romper si falla — el scheduler lo limpiará eventualmente
+            log.warn("No se pudo limpiar waiting_queue para {}", userId);
+        }
         return ResponseEntity.ok(response);
     }
-
 
 }

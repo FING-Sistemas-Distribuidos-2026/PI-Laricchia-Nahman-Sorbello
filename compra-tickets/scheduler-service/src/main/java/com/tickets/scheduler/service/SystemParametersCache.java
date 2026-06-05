@@ -27,12 +27,12 @@ public class SystemParametersCache {
 
     // volatile: garantiza visibilidad entre hilos (el scheduler corre en hilo propio)
     // Valores iniciales = defaults seguros mientras compra-service no responde
-    private volatile long maxConcurrentBuyers = 10L;
-    private volatile long purchaseTtlSeconds  = 600L;
+    private volatile long maxConcurrentBuyers = 5L;
+    private volatile long purchaseTtlSeconds  = 300L;
 
     public SystemParametersCache(
-            @Value("${compra-service.url:http://localhost:8083}") String compraUrl) {
-        this.restClient = RestClient.builder().baseUrl(compraUrl).build();
+            @Value("${queue-service.url:http://localhost:8081}") String queueUrl) {
+        this.restClient = RestClient.builder().baseUrl(queueUrl).build();
     }
 
     // @PostConstruct: carga inicial al arrancar el servicio

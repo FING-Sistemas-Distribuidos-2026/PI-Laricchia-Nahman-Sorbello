@@ -1,5 +1,6 @@
 package com.tickets.queue.service;
 
+import com.tickets.queue.repository.SystemParameterRepository;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -12,22 +13,18 @@ import java.util.Map;
 @Slf4j
 @Component
 public class SystemParametersCache {
+    private final SystemParameterRepository repo;
 
-    private final RestClient restClient;
-
-    //defaults por si lo de la aidis esta caida, el sistema sigue funcionando con estos valores
     private volatile long maxWaitingQueue     = 50L;
     private volatile long maxConcurrentBuyers = 5L;
     private volatile long purchaseTtlSeconds  = 300L;
 
-    public SystemParametersCache(@Value("${compra-service.url:http://localhost:8083}") String compraUrl) {
-        this.restClient = RestClient.builder().baseUrl(compraUrl).build();
+    public SystemParametersCache(SystemParameterRepository repo) {
+        this.repo = repo;
     }
 
     @PostConstruct
-    public void init() {
-        refresh();
-    }
+    public void init() { refresh(); }
 
     @Scheduled(fixedDelay = 30_000)
     public void refresh() {
@@ -40,22 +37,14 @@ public class SystemParametersCache {
     public long getMaxConcurrentBuyers() { return maxConcurrentBuyers; }
     public long getPurchaseTtlSeconds()  { return purchaseTtlSeconds; }
 
-    @SuppressWarnings("unchecked")
     private long fetch(String key, long fallback) {
         try {
-            Map<String, Object> body = restClient.get()
-                    .uri("/api/params/{key}", key)
-                    .retrieve()
-                    .body(Map.class);
-            if (body != null && body.get("value") != null) {
-                long value = Long.parseLong(body.get("value").toString());
-                log.debug("[ParamsCache] {} = {}", key, value);
-                return value;
-            }
+            return repo.findById(key)
+                    .map(p -> Long.parseLong(p.getValue()))
+                    .orElse(fallback);
         } catch (Exception e) {
-            log.warn("[ParamsCache] No se pudo leer '{}' de compra-service: {}. Uso valor actual: {}",
-                    key, e.getMessage(), fallback);
+            log.warn("[ParamsCache] No se pudo leer '{}': {}. Uso: {}", key, e.getMessage(), fallback);
+            return fallback;
         }
-        return fallback;
     }
 }

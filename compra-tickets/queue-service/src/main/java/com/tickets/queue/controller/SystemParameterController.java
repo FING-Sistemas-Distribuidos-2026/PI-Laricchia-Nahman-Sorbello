@@ -1,12 +1,12 @@
-package com.tickets.compra.controller;
+package com.tickets.queue.controller;
 
-import com.tickets.compra.entity.SystemParameter;
-import com.tickets.compra.service.SystemParameterService;
+import com.tickets.queue.entity.SystemParameter;
+import com.tickets.queue.service.SystemParameterService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/api/params")
+@RequestMapping("/params")
 public class SystemParameterController {
 
     private final SystemParameterService systemParameterService;

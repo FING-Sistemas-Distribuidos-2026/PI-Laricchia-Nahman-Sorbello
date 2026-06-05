@@ -1,6 +1,6 @@
-package com.tickets.compra.repository;
+package com.tickets.queue.repository;
 
-import com.tickets.compra.entity.SystemParameter;
+import com.tickets.queue.entity.SystemParameter;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 import java.util.Optional;

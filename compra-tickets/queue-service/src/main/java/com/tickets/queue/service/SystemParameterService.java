@@ -1,7 +1,7 @@
-package com.tickets.compra.service;
+package com.tickets.queue.service;
 
-import com.tickets.compra.entity.SystemParameter;
-import com.tickets.compra.repository.SystemParameterRepository;
+import com.tickets.queue.entity.SystemParameter;
+import com.tickets.queue.repository.SystemParameterRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;

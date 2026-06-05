@@ -1,4 +1,4 @@
-package com.tickets.compra.entity;
+package com.tickets.queue.entity;
 
 import jakarta.persistence.*;
 

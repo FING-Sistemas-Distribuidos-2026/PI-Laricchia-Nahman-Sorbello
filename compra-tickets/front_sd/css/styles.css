@@ -1,26 +1,27 @@
 /* ─── Variables y reset ─────────────────────────────────────── */
 :root {
-  --color-bg:         #0a0a0b;
-  --color-surface:    #141416;
-  --color-surface-2:  #1e1e22;
-  --color-border:     #2a2a30;
-  --color-border-hover: #3e3e48;
+  --color-bg:         #f8f9fb;
+  --color-surface:    #ffffff;
+  --color-surface-2:  #f1f3f5;
+  --color-border:     #dfe3e8;
+  --color-border-hover: #c7ced6;
 
-  --color-text-primary:   #f0ede8;
-  --color-text-secondary: #8a8794;
-  --color-text-muted:     #4a4854;
+  --color-text-primary:   #1f2937;
+  --color-text-secondary: #6b7280;
+  --color-text-muted:     #9ca3af;
 
   --color-accent:       #c84b2f;
   --color-accent-hover: #e05535;
-  --color-accent-muted: #3d1810;
+  --color-accent-muted: #fde8e3;
 
   --color-success:      #2d7a4f;
-  --color-success-bg:   #0d2318;
-  --color-success-text: #5ec98a;
+  --color-success-bg:   #e8f7ee;
+  --color-success-text: #1f6b42;
 
-  --color-warning:      #8a6820;
-  --color-warning-bg:   #241c08;
-  --color-warning-text: #f0b429;
+  --color-warning:      #c58b00;
+  --color-warning-bg:   #fff7db;
+  --color-warning-text: #9a6b00;
+}
 
   --font-display: 'DM Serif Display', Georgia, serif;
   --font-body:    'DM Sans', system-ui, sans-serif;

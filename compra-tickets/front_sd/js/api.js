@@ -1,9 +1,14 @@
 /**
  * api.js — Capa centralizada de comunicación con el backend.
  *
- * Todos los endpoints están agrupados por microservicio.
- * Cada función devuelve una Promise con { data, error }.
- * Nunca tira excepciones hacia afuera: los errores se manejan acá.
+ * Este archivo NO sabe nada de Redis.
+ * Solo llama al API Gateway.
+ *
+ * Separación de endpoints:
+ *
+ * /api/queue/*   -> cola de espera
+ * /api/buying/*  -> sesión activa de compra + TTL
+ * /api/purchase  -> confirmación de compra
  */
 
 const API = (() => {
@@ -19,38 +24,48 @@ const API = (() => {
 
       let data = null;
       const contentType = res.headers.get('content-type') || '';
+
       if (contentType.includes('application/json')) {
         data = await res.json();
       }
 
       if (!res.ok) {
-        return { data, error: { status: res.status, body: data } };
+        return {
+          data,
+          error: {
+            status: res.status,
+            body: data,
+          },
+        };
       }
 
       return { data, error: null };
+
     } catch (err) {
-      return { data: null, error: { status: 0, body: null, message: err.message } };
+      return {
+        data: null,
+        error: {
+          status: 0,
+          body: null,
+          message: err.message,
+        },
+      };
     }
   }
 
-  async function crearUsuario() {
-    return request(`${BASE}/api/usuarios`, { method: 'POST' });
-  }
+  // ─────────────────────────────────────────────
+  // Usuarios
+  // ─────────────────────────────────────────────
 
-  async function confirmarCompra(userId, ticketId) {
-    return request(`${BASE}/api/purchase`, {
+  async function crearUsuario() {
+    return request(`${BASE}/api/usuarios`, {
       method: 'POST',
-      body: JSON.stringify({ userId, ticketId }),
     });
   }
 
-  async function expirarCompra(userId) {
-    return request(`${BASE}/api/purchase/expire/${userId}`, { method: 'POST' });
-  }
-
-  async function obtenerParametro(key) {
-    return request(`${BASE}/api/params/${key}`);
-  }
+  // ─────────────────────────────────────────────
+  // Cola de espera
+  // ─────────────────────────────────────────────
 
   async function unirseACola(userId) {
     return request(`${BASE}/api/queue/join`, {
@@ -59,27 +74,90 @@ const API = (() => {
     });
   }
 
+  /**
+   * Estado general desde la cola.
+   *
+   * Este endpoint puede devolver:
+   * WAITING | BUYING | EXPIRED | PURCHASED | NOT_FOUND | REJECTED
+   *
+   * El gateway internamente primero pregunta a compra-service
+   * si el usuario ya está BUYING, y si no, pregunta a queue-service.
+   */
   async function obtenerEstado(userId) {
     return request(`${BASE}/api/queue/status/${userId}`);
-  }
-
-  async function obtenerTTL(userId) {
-    return request(`${BASE}/api/queue/ttl/${userId}`);
   }
 
   async function obtenerStats() {
     return request(`${BASE}/api/queue/stats`);
   }
 
+  // ─────────────────────────────────────────────
+  // Compra activa / TTL
+  // ─────────────────────────────────────────────
+
+  /**
+   * TTL de la ventana de compra activa.
+   *
+   * Sale de:
+   * GET /api/buying/ttl/{userId}
+   *
+   * Respuesta esperada:
+   * { "ttl": 123 }
+   *
+   * ttl > 0  -> puede seguir comprando
+   * ttl = 0  -> venció
+   * ttl = -2 -> no hay sesión activa
+   */
+  async function obtenerTTL(userId) {
+    return request(`${BASE}/api/buying/ttl/${userId}`);
+  }
+
+  async function obtenerEstadoBuying(userId) {
+    return request(`${BASE}/api/buying/status/${userId}`);
+  }
+
+  /**
+   * Lo llama el front cuando el contador llega a 0.
+   */
+  async function expirarCompra(userId) {
+    return request(`${BASE}/api/buying/expire/${userId}`, {
+      method: 'POST',
+    });
+  }
+
+  // ─────────────────────────────────────────────
+  // Confirmación de compra
+  // ─────────────────────────────────────────────
+
+  async function confirmarCompra(userId, ticketId) {
+    return request(`${BASE}/api/purchase`, {
+      method: 'POST',
+      body: JSON.stringify({ userId, ticketId }),
+    });
+  }
+
+  // ─────────────────────────────────────────────
+  // Parámetros
+  // ─────────────────────────────────────────────
+
+  async function obtenerParametro(key) {
+    return request(`${BASE}/api/params/${key}`);
+  }
+
   return {
     crearUsuario,
-    confirmarCompra,
-    expirarCompra,
-    obtenerParametro,
+
     unirseACola,
     obtenerEstado,
-    obtenerTTL,
     obtenerStats,
+
+    obtenerTTL,
+    obtenerEstadoBuying,
+    expirarCompra,
+
+    confirmarCompra,
+
+    obtenerParametro,
   };
 
 })();

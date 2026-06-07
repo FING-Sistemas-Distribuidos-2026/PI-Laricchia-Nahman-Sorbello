@@ -1,8 +1,5 @@
 /**
- * rejected.js — Pantalla de cola llena (status REJECTED).
- *
- * No hay nada que hacer desde el front. El usuario debe intentar
- * más tarde cuando haya lugar en la cola de espera.
+ * rejected.js — Pantalla de cola llena.
  */
 
 const RejectedPage = (() => {
@@ -25,8 +22,7 @@ const RejectedPage = (() => {
             <h1>No hay lugar por ahora</h1>
             <p>
               La sala de espera está al máximo de su capacidad.
-              Intentá de nuevo en unos minutos: a medida que los usuarios
-              compran o expiran, se liberan lugares.
+              Intentá de nuevo en unos minutos.
             </p>
           </div>
         </div>
@@ -36,10 +32,11 @@ const RejectedPage = (() => {
             <span class="label">Estado del sistema</span>
             <span class="value" id="rejected-stats">Cargando…</span>
           </div>
+
           <div class="card-row">
             <span class="label">¿Qué hacer?</span>
             <span class="value" style="font-size: 0.8rem; color: var(--color-text-secondary); font-family: var(--font-body); text-align: right; max-width: 60%;">
-              Reintentá en 1-2 minutos
+              Reintentá en unos minutos.
             </span>
           </div>
         </div>
@@ -70,8 +67,9 @@ const RejectedPage = (() => {
     if (!el) return;
 
     const { data } = await API.obtenerStats();
-    if (data) {
-      el.textContent = `${data.waiting} esperando · ${data.buying} comprando`;
+
+    if (data?.waiting !== undefined) {
+      el.textContent = `${data.waiting} esperando`;
     } else {
       el.textContent = 'No disponible';
     }

@@ -1,9 +1,11 @@
 /**
- * expired.js — Pantalla de expiración de turno.
+ * expired.js — Pantalla de expiración.
  *
- * Muestra que el tiempo se agotó y ofrece volver a la cola.
- * Al reintentar: limpia el userId de sesión y vuelve al landing,
- * que creará un nuevo usuario y re-ingresará a la cola.
+ * Llegamos acá cuando:
+ *
+ * 1. El countdown llegó a 0.
+ * 2. El backend respondió EXPIRED.
+ * 3. El usuario intentó comprar con TTL vencido.
  */
 
 const ExpiredPage = (() => {
@@ -26,7 +28,7 @@ const ExpiredPage = (() => {
             <h1>Tu turno expiró</h1>
             <p>
               El tiempo para confirmar la compra se terminó antes de que
-              pudieras completarla. Tu ticket volvió al pool disponible.
+              pudieras completarla. El ticket volvió al pool disponible.
             </p>
           </div>
         </div>
@@ -39,10 +41,11 @@ const ExpiredPage = (() => {
               Expirado
             </span>
           </div>
+
           <div class="card-row">
             <span class="label">¿Qué pasó?</span>
             <span class="value" style="font-size: 0.8rem; color: var(--color-text-secondary); font-family: var(--font-body); text-align: right; max-width: 60%;">
-              Los 10 minutos de reserva se agotaron
+              Se venció tu tiempo de compra.
             </span>
           </div>
         </div>
@@ -51,6 +54,7 @@ const ExpiredPage = (() => {
           <button id="btn-reintentar" class="btn btn-primary">
             Volver a la cola
           </button>
+
           <button id="btn-salir" class="btn btn-ghost">
             No, gracias
           </button>
@@ -70,7 +74,7 @@ const ExpiredPage = (() => {
 
     document.getElementById('btn-salir').addEventListener('click', () => {
       Session.clear();
-      // Mostrar mensaje de cierre en lugar de navegar en loop
+
       document.getElementById('expired-page').innerHTML = `
         <div class="page-header" style="text-align: center; align-items: center;">
           <h1 style="font-size: 1.8rem;">Hasta la próxima</h1>

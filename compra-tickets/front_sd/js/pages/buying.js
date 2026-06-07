@@ -2,23 +2,27 @@
  * buying.js — Pantalla "¡Es tu turno!".
  *
  * Responsabilidades:
- *  1. Mostrar cuenta regresiva (TTL) con anillo SVG animado
- *  2. Polling del TTL real desde el backend cada 5s (fuente de verdad)
- *  3. Countdown local en JS para animación fluida entre polls
- *  4. Al confirmar: POST /api/purchase → navegar a /success
- *  5. Al llegar a 0: POST /api/purchase/expire → navegar a /expired
- *  6. Retornar cleanup para detener timers al salir
+ *
+ * 1. Mostrar cuenta regresiva.
+ * 2. Consultar TTL desde /api/buying/ttl/{userId}.
+ * 3. Cuando el TTL llega a 0, llamar /api/buying/expire/{userId}.
+ * 4. Antes de confirmar compra, volver a consultar TTL.
+ * 5. Si TTL > 0, llamar /api/purchase.
+ * 6. Si backend responde PURCHASED, navegar a success.
+ * 7. Si backend responde EXPIRED, navegar a expired.
  */
 
 const BuyingPage = (() => {
 
-  const TTL_TOTAL = 600; // segundos (10 minutos) — se sincroniza con el backend
-  const URGENT_THRESHOLD = 60; // segundos para mostrar alerta
+  const TTL_TOTAL_DEFAULT = 600;
+  const URGENT_THRESHOLD = 60;
 
-  // Estado interno de la página
-  let ttlActual     = TTL_TOTAL;
-  let countdownId   = null;
-  let expiradoYa    = false;
+  let ttlActual = TTL_TOTAL_DEFAULT;
+  let ttlTotal = TTL_TOTAL_DEFAULT;
+
+  let countdownId = null;
+  let expiradoYa = false;
+  let confirmando = false;
 
   function render(container, Session) {
     const { userId, ticketId } = Session.get();
@@ -28,9 +32,10 @@ const BuyingPage = (() => {
       return;
     }
 
-    // Resetear estado interno
-    ttlActual   = TTL_TOTAL;
-    expiradoYa  = false;
+    ttlActual = TTL_TOTAL_DEFAULT;
+    ttlTotal = TTL_TOTAL_DEFAULT;
+    expiradoYa = false;
+    confirmando = false;
 
     container.innerHTML = `
       <div class="page" id="buying-page">
@@ -40,20 +45,34 @@ const BuyingPage = (() => {
           <h1>Confirmá tu compra</h1>
           <p>
             Tenés tiempo limitado para completar la compra.
-            Si el tiempo se agota, volvés al final de la fila.
+            Si el tiempo se agota, el ticket vuelve a estar disponible.
           </p>
         </header>
 
         <div class="card" style="align-items: center;">
           <div class="countdown-ring">
             <svg width="120" height="120" viewBox="0 0 120 120" aria-hidden="true">
-              <circle class="ring-bg"   cx="60" cy="60" r="52"/>
-              <circle class="ring-fill" cx="60" cy="60" r="52"
+              <circle class="ring-bg" cx="60" cy="60" r="52"/>
+              <circle
+                class="ring-fill"
+                cx="60"
+                cy="60"
+                r="52"
                 id="ring-fill"
                 stroke-dasharray="326.7"
-                stroke-dashoffset="0"/>
+                stroke-dashoffset="0"
+              />
             </svg>
-            <span class="countdown-time" id="countdown-time" aria-live="polite" aria-label="Tiempo restante">10:00</span>
+
+            <span
+              class="countdown-time"
+              id="countdown-time"
+              aria-live="polite"
+              aria-label="Tiempo restante"
+            >
+              10:00
+            </span>
+
             <span class="countdown-label">tiempo restante</span>
           </div>
 
@@ -77,6 +96,7 @@ const BuyingPage = (() => {
               Turno activo
             </span>
           </div>
+
           <div class="card-row">
             <span class="label">N.° de ticket</span>
             <span class="value" id="ticket-id-display">${ticketId ?? '—'}</span>
@@ -87,8 +107,9 @@ const BuyingPage = (() => {
           <button id="btn-confirmar" class="btn btn-primary">
             Confirmar compra
           </button>
+
           <p class="help-text">
-            Al confirmar se descuenta el ticket de la disponibilidad.
+            Antes de confirmar, el sistema vuelve a validar que tu tiempo no haya expirado.
           </p>
         </div>
 
@@ -97,155 +118,306 @@ const BuyingPage = (() => {
       </div>
     `;
 
-    // Sincronizar TTL desde el backend antes de arrancar el countdown
-    sincronizarTTL(userId).then(() => {
+    document
+        .getElementById('btn-confirmar')
+        .addEventListener('click', () => handleConfirmar(userId, ticketId));
+
+    sincronizarTTLInicial(userId).then(() => {
       iniciarCountdown(userId);
     });
 
-    // Polling liviano del TTL cada 5s para mantener sincronía
     const pollTTL = Polling.create({
-      fn:        () => API.obtenerTTL(userId),
-      interval:  5000,
+      fn: () => API.obtenerTTL(userId),
+      interval: 5000,
       immediate: false,
-      onSuccess: ({ ttl }) => {
-        if (ttl >= 0) ajustarTTL(ttl);
-      },
-    });
-    pollTTL.start();
-
-    // Polling del estado para detectar cambios externos (ej: expiración por el backend)
-    const pollEstado = Polling.create({
-      fn:        () => API.obtenerEstado(userId),
-      interval:  3000,
-      immediate: false,
+      maxErrors: 5,
       onSuccess: (data) => {
-        if (data.status === 'EXPIRED')   { cleanup(); Router.navigate('/expired'); }
-        if (data.status === 'PURCHASED') { cleanup(); Router.navigate('/success'); }
+        if (!data) return;
+
+        const ttl = Number(data.ttl);
+
+        if (ttl === -2) {
+          Router.navigate('/expired');
+          return;
+        }
+
+        if (ttl <= 0) {
+          handleExpiracion(userId);
+          return;
+        }
+
+        ajustarTTL(ttl);
+      },
+      onError: () => {
+        /**
+         * No expiramos por error de red.
+         * El usuario puede estar sin conexión momentáneamente.
+         */
       },
     });
-    pollEstado.start();
 
-    document.getElementById('btn-confirmar')
-      .addEventListener('click', () => handleConfirmar(userId, ticketId));
+    const pollEstado = Polling.create({
+      fn: () => API.obtenerEstadoBuying(userId),
+      interval: 3000,
+      immediate: false,
+      maxErrors: 5,
+      onSuccess: (data) => {
+        if (!data) return;
+
+        if (data.status === 'EXPIRED') {
+          cleanup();
+          Router.navigate('/expired');
+          return;
+        }
+
+        if (data.status === 'PURCHASED') {
+          cleanup();
+          Router.navigate('/success');
+          return;
+        }
+
+        if (data.status === 'NOT_FOUND') {
+          cleanup();
+          Router.navigate('/expired');
+        }
+      },
+    });
+
+    pollTTL.start();
+    pollEstado.start();
 
     function cleanup() {
       pollTTL.stop();
       pollEstado.stop();
-      if (countdownId) { clearInterval(countdownId); countdownId = null; }
+
+      if (countdownId) {
+        clearInterval(countdownId);
+        countdownId = null;
+      }
     }
 
     return cleanup;
   }
 
-  // ─── Countdown local ─────────────────────────────────────────
+  // ─────────────────────────────────────────────
+  // TTL
+  // ─────────────────────────────────────────────
+
+  async function sincronizarTTLInicial(userId) {
+    const { data, error } = await API.obtenerTTL(userId);
+
+    if (error || !data) {
+      renderCountdown(ttlActual);
+      return;
+    }
+
+    const ttl = Number(data.ttl);
+
+    if (ttl === -2) {
+      Router.navigate('/expired');
+      return;
+    }
+
+    if (ttl <= 0) {
+      await handleExpiracion(userId);
+      return;
+    }
+
+    ttlActual = ttl;
+    ttlTotal = Math.max(ttl, TTL_TOTAL_DEFAULT);
+
+    renderCountdown(ttlActual);
+  }
 
   function iniciarCountdown(userId) {
-    if (countdownId) clearInterval(countdownId);
+    if (countdownId) {
+      clearInterval(countdownId);
+    }
 
     countdownId = setInterval(async () => {
       ttlActual = Math.max(0, ttlActual - 1);
       renderCountdown(ttlActual);
 
       if (ttlActual <= 0 && !expiradoYa) {
-        expiradoYa = true;
-        clearInterval(countdownId);
         await handleExpiracion(userId);
       }
     }, 1000);
   }
 
-  async function sincronizarTTL(userId) {
-    const { data } = await API.obtenerTTL(userId);
-    if (data && data.ttl >= 0) {
-      ttlActual = data.ttl;
-      renderCountdown(ttlActual);
-    }
-  }
-
   function ajustarTTL(ttlReal) {
-    // Solo ajustar si la diferencia es > 2s para evitar saltos visuales bruscos
+    if (Number.isNaN(ttlReal)) {
+      return;
+    }
+
+    /**
+     * Ajustamos solo si la diferencia es grande para evitar saltos visuales.
+     */
     if (Math.abs(ttlActual - ttlReal) > 2) {
       ttlActual = ttlReal;
+      ttlTotal = Math.max(ttlTotal, ttlReal);
       renderCountdown(ttlActual);
     }
   }
 
-  // ─── Render del reloj y anillo ───────────────────────────────
-
   function renderCountdown(segundos) {
-    const timeEl   = document.getElementById('countdown-time');
-    const ringEl   = document.getElementById('ring-fill');
-    const urgEl    = document.getElementById('urgency-banner');
+    const timeEl = document.getElementById('countdown-time');
+    const ringEl = document.getElementById('ring-fill');
+    const urgencyEl = document.getElementById('urgency-banner');
 
     if (!timeEl) return;
 
     const mins = Math.floor(segundos / 60);
     const secs = segundos % 60;
+
     timeEl.textContent = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 
-    // Anillo SVG: circunferencia = 2π × 52 ≈ 326.7
     const CIRCUNFERENCIA = 326.7;
-    const progreso = segundos / TTL_TOTAL;
-    const offset   = CIRCUNFERENCIA * (1 - progreso);
+    const progreso = ttlTotal > 0 ? segundos / ttlTotal : 0;
+    const offset = CIRCUNFERENCIA * (1 - progreso);
 
     if (ringEl) {
       ringEl.style.strokeDashoffset = offset.toFixed(2);
       ringEl.classList.toggle('urgent', segundos <= URGENT_THRESHOLD);
     }
 
-    // Banner de urgencia
-    if (urgEl) {
-      urgEl.style.display = segundos <= URGENT_THRESHOLD ? 'block' : 'none';
+    if (urgencyEl) {
+      urgencyEl.style.display = segundos <= URGENT_THRESHOLD ? 'block' : 'none';
     }
   }
 
-  // ─── Acciones ────────────────────────────────────────────────
+  // ─────────────────────────────────────────────
+  // Confirmar compra
+  // ─────────────────────────────────────────────
 
   async function handleConfirmar(userId, ticketId) {
     const btn = document.getElementById('btn-confirmar');
     const errorContainer = document.getElementById('error-container');
 
+    if (confirmando) return;
+
     if (!ticketId) {
-      mostrarError(errorContainer, 'No se encontró el número de ticket. Recargá la página.');
+      mostrarError(
+          errorContainer,
+          'No se encontró el número de ticket. Volvé a la cola e intentá nuevamente.'
+      );
       return;
     }
 
-    btn.disabled    = true;
-    btn.textContent = 'Confirmando…';
+    confirmando = true;
+    btn.disabled = true;
+    btn.textContent = 'Validando tiempo…';
     errorContainer.innerHTML = '';
+
+    /**
+     * Primero verificamos TTL desde el BFF.
+     * Esto mantiene el comportamiento que ustedes querían:
+     * "si no expiró, compra; si expiró, error".
+     */
+    const { data: ttlData, error: ttlError } = await API.obtenerTTL(userId);
+
+    if (ttlError || !ttlData) {
+      confirmando = false;
+      btn.disabled = false;
+      btn.textContent = 'Confirmar compra';
+
+      mostrarError(
+          errorContainer,
+          'No pudimos validar tu tiempo restante. Intentá de nuevo en unos segundos.'
+      );
+
+      return;
+    }
+
+    const ttl = Number(ttlData.ttl);
+
+    if (ttl <= 0) {
+      await handleExpiracion(userId);
+      return;
+    }
+
+    btn.textContent = 'Confirmando…';
 
     const { data, error } = await API.confirmarCompra(userId, ticketId);
 
     if (error) {
-      btn.disabled    = false;
+      confirmando = false;
+      btn.disabled = false;
       btn.textContent = 'Confirmar compra';
 
       if (error.status === 409) {
         mostrarError(
-          errorContainer,
-          'El ticket ya no está disponible o pertenece a otro usuario. Tu sesión puede haber expirado.'
+            errorContainer,
+            'El ticket ya no está disponible o tu tiempo de compra expiró.'
         );
       } else if (error.status === 404) {
-        mostrarError(errorContainer, 'No se encontró el ticket o el usuario. Verificá tu sesión.');
+        mostrarError(
+            errorContainer,
+            'No se encontró el ticket o el usuario. Verificá tu sesión.'
+        );
       } else {
-        mostrarError(errorContainer, 'Error al confirmar. Intentá de nuevo en unos segundos.');
+        mostrarError(
+            errorContainer,
+            'Error al confirmar. Intentá de nuevo en unos segundos.'
+        );
       }
+
       return;
     }
 
-    Router.Session.set({ purchaseData: data });
+    if (data?.status === 'EXPIRED') {
+      await handleExpiracion(userId);
+      return;
+    }
+
+    if (data?.status !== 'PURCHASED') {
+      confirmando = false;
+      btn.disabled = false;
+      btn.textContent = 'Confirmar compra';
+
+      mostrarError(
+          errorContainer,
+          'No se pudo confirmar la compra. Verificá el estado de tu sesión.'
+      );
+
+      return;
+    }
+
+    Router.Session.set({
+      purchaseData: data,
+      ticketId: data.ticketId ?? ticketId,
+    });
+
     Router.navigate('/success');
   }
 
+  // ─────────────────────────────────────────────
+  // Expirar
+  // ─────────────────────────────────────────────
+
   async function handleExpiracion(userId) {
-    await API.expirarCompra(userId);
-    Router.navigate('/expired');
+    if (expiradoYa) return;
+
+    expiradoYa = true;
+
+    if (countdownId) {
+      clearInterval(countdownId);
+      countdownId = null;
+    }
+
+    try {
+      await API.expirarCompra(userId);
+    } finally {
+      Router.navigate('/expired');
+    }
   }
 
-  // ─── Helpers ─────────────────────────────────────────────────
+  // ─────────────────────────────────────────────
+  // Helpers UI
+  // ─────────────────────────────────────────────
 
   function mostrarError(container, mensaje) {
     if (!container) return;
+
     container.innerHTML = `
       <div class="error-banner" role="alert">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">

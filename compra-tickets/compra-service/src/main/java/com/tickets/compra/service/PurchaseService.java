@@ -1,6 +1,5 @@
 package com.tickets.compra.service;
 
-import com.tickets.compra.client.QueueServiceClient;
 import com.tickets.compra.dto.PurchaseResponseDTO;
 import com.tickets.compra.entity.EventLog;
 import com.tickets.compra.entity.Purchase;
@@ -18,6 +17,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -29,64 +29,103 @@ public class PurchaseService {
     private final QueueEntryRepository queueEntryRepository;
     private final PurchaseRepository purchaseRepository;
     private final EventLogRepository eventLogRepository;
-    private final QueueServiceClient queueServiceClient;
+    private final ActiveBuyingRedisService activeBuyingRedisService;
 
     public PurchaseService(
             TicketRepository ticketRepository,
             QueueEntryRepository queueEntryRepository,
             PurchaseRepository purchaseRepository,
             EventLogRepository eventLogRepository,
-            QueueServiceClient queueServiceClient) {
+            ActiveBuyingRedisService activeBuyingRedisService
+    ) {
         this.ticketRepository = ticketRepository;
         this.queueEntryRepository = queueEntryRepository;
         this.purchaseRepository = purchaseRepository;
         this.eventLogRepository = eventLogRepository;
-        this.queueServiceClient = queueServiceClient;
+        this.activeBuyingRedisService = activeBuyingRedisService;
     }
 
     /**
-     * Confirma la compra de un ticket ya reservado.
-     * Lock pesimista sobre el ticket para evitar doble confirmación concurrente.
+     * Confirma la compra de un ticket reservado.
+     *
+     * Fuente de verdad de la ventana activa:
+     * Redis HASH buying:sessions.
+     *
+     * Este método NO toca waiting_queue.
      */
     @Transactional
     public PurchaseResponseDTO confirmPurchase(UUID userId, Long ticketId) {
 
+        ActiveBuyingRedisService.ActiveBuyingSession session =
+                activeBuyingRedisService.findSession(userId)
+                        .orElseThrow(() -> new ResponseStatusException(
+                                HttpStatus.CONFLICT,
+                                "El usuario no tiene ventana de compra activa."
+                        ));
+
+        if (!ticketId.equals(session.ticketId())) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "El ticket no coincide con la sesión de compra activa."
+            );
+        }
+
+        /**
+         * Validación fuerte del backend.
+         *
+         * Aunque el front mire el TTL antes de confirmar,
+         * el backend no puede confiar solamente en el front.
+         *
+         * Si venció, expira y devuelve status EXPIRED.
+         */
+        if (!session.expiresAt().isAfter(Instant.now())) {
+            return expirePurchase(userId);
+        }
+
         Ticket ticket = ticketRepository.findByIdWithLock(ticketId)
                 .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND, "Ticket no encontrado: " + ticketId));
+                        HttpStatus.NOT_FOUND,
+                        "Ticket no encontrado: " + ticketId
+                ));
 
         if (ticket.getStatus() != TicketStatus.RESERVED) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "Ticket no está en RESERVED. Estado actual: " + ticket.getStatus());
-        }
-        if (!userId.equals(ticket.getReservedBy())) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "El ticket pertenece a otra reserva.");
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Ticket no está en RESERVED. Estado actual: "
+                            + ticket.getStatus()
+            );
         }
 
-        // Ticket -> SOLD, limpiar reserva
+        if (!userId.equals(ticket.getReservedBy())) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "El ticket pertenece a otra reserva."
+            );
+        }
+
         ticket.setStatus(TicketStatus.SOLD);
         ticket.setReservedBy(null);
         ticketRepository.save(ticket);
 
-        // QueueEntry -> PURCHASED (@PreUpdate maneja updatedAt)
         QueueEntry queueEntry = queueEntryRepository.findByUserId(userId)
                 .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND, "QueueEntry no encontrada para: " + userId));
+                        HttpStatus.NOT_FOUND,
+                        "QueueEntry no encontrada para: " + userId
+                ));
+
         queueEntry.setStatus(QueueStatus.PURCHASED);
         queueEntryRepository.save(queueEntry);
 
-        // Purchase (@PrePersist maneja createdAt)
         Purchase purchase = new Purchase();
         purchase.setTicketId(ticketId);
         purchase.setUserId(userId);
         purchase.setStatus(PurchaseStatus.SUCCESS);
         purchaseRepository.save(purchase);
 
-        // EventLog (@PrePersist maneja createdAt)
         Map<String, Object> payload = new HashMap<>();
         payload.put("userId", userId.toString());
         payload.put("ticketId", ticketId);
+        payload.put("redisHash", ActiveBuyingRedisService.BUYING_HASH_KEY);
 
         EventLog log = new EventLog();
         log.setUserId(userId);
@@ -94,8 +133,7 @@ public class PurchaseService {
         log.setPayload(payload);
         eventLogRepository.save(log);
 
-        // Notificar a queue-service para que limpie Redis (active:{userId}, waiting_queue, contadores)
-        queueServiceClient.cleanupRedis(userId);
+        activeBuyingRedisService.removeSession(userId);
 
         return PurchaseResponseDTO.builder()
                 .userId(userId)
@@ -106,54 +144,71 @@ public class PurchaseService {
     }
 
     /**
-     * Expira la compra de un usuario que no completó en tiempo.
-     * IDEMPOTENTE: si ya está EXPIRED o PURCHASED no modifica nada.
-     * Purchase solo se registra si había un ticket reservado (ticketId NOT NULL en BD).
+     * Expira la ventana de compra.
+     *
+     * Es idempotente:
+     * si ya estaba EXPIRED o PURCHASED, no rompe nada.
      */
     @Transactional
     public PurchaseResponseDTO expirePurchase(UUID userId) {
 
-        QueueEntry queueEntry = queueEntryRepository.findByUserId(userId).orElse(null);
+        QueueEntry queueEntry = queueEntryRepository
+                .findByUserId(userId)
+                .orElse(null);
+
         if (queueEntry == null) {
+            activeBuyingRedisService.removeSession(userId);
+
             return PurchaseResponseDTO.builder()
                     .userId(userId)
                     .status("EXPIRED")
-                    .message("Ya procesado anteriormente.")
+                    .message("Sesión expirada o ya procesada.")
                     .build();
         }
 
         if (queueEntry.getStatus() == QueueStatus.PURCHASED) {
+            activeBuyingRedisService.removeSession(userId);
+
             return PurchaseResponseDTO.builder()
                     .userId(userId)
-                    .status("EXPIRED")
-                    .message("Ya procesado anteriormente.")
+                    .status("PURCHASED")
+                    .message("La compra ya había sido confirmada.")
                     .build();
         }
 
-        // Liberar ticket y registrar Purchase solo si había reserva activa
-        ticketRepository.findFirstByStatusAndReservedBy(TicketStatus.RESERVED, userId)
-                .ifPresent(ticket -> {
-                    Long ticketId = ticket.getId();
+        if (queueEntry.getStatus() == QueueStatus.EXPIRED) {
+            activeBuyingRedisService.removeSession(userId);
 
-                    ticket.setStatus(TicketStatus.AVAILABLE);
-                    ticket.setReservedBy(null);
-                    ticketRepository.save(ticket);
+            return PurchaseResponseDTO.builder()
+                    .userId(userId)
+                    .status("EXPIRED")
+                    .message("La compra ya había expirado.")
+                    .build();
+        }
 
-                    // Purchase requiere ticketId NOT NULL -> solo se crea si había ticket
-                    Purchase purchase = new Purchase();
-                    purchase.setTicketId(ticketId);
-                    purchase.setUserId(userId);
-                    purchase.setStatus(PurchaseStatus.EXPIRED);
-                    purchaseRepository.save(purchase);
-                });
+        ticketRepository.findFirstByStatusAndReservedBy(
+                TicketStatus.RESERVED,
+                userId
+        ).ifPresent(ticket -> {
+            Long ticketId = ticket.getId();
 
-        //queueEntryRepository.delete(queueEntry);
-        //no la borramos la marcamos como expired
+            ticket.setStatus(TicketStatus.AVAILABLE);
+            ticket.setReservedBy(null);
+            ticketRepository.save(ticket);
+
+            Purchase purchase = new Purchase();
+            purchase.setTicketId(ticketId);
+            purchase.setUserId(userId);
+            purchase.setStatus(PurchaseStatus.EXPIRED);
+            purchaseRepository.save(purchase);
+        });
+
         queueEntry.setStatus(QueueStatus.EXPIRED);
         queueEntryRepository.save(queueEntry);
-        // EventLog
+
         Map<String, Object> payload = new HashMap<>();
         payload.put("userId", userId.toString());
+        payload.put("redisHash", ActiveBuyingRedisService.BUYING_HASH_KEY);
 
         EventLog log = new EventLog();
         log.setUserId(userId);
@@ -161,8 +216,7 @@ public class PurchaseService {
         log.setPayload(payload);
         eventLogRepository.save(log);
 
-        // Notificar a queue-service para que limpie Redis
-        queueServiceClient.cleanupRedis(userId);
+        activeBuyingRedisService.removeSession(userId);
 
         return PurchaseResponseDTO.builder()
                 .userId(userId)

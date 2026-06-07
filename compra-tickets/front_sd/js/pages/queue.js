@@ -1,14 +1,11 @@
 /**
  * queue.js — Pantalla de espera en cola.
  *
- * Responsabilidades:
- *  1. Mostrar posición actual y total de gente esperando
- *  2. Polling cada 2.5s a GET /api/queue/status/{userId}
- *  3. Actualizar la UI sin parpadeo (solo cambia los valores)
- *  4. Cuando status cambia a BUYING  → navegar a /buying
- *  5. Cuando status cambia a EXPIRED → navegar a /expired
- *  6. Si el userId no existe en Session → volver a /
- *  7. Retornar función de cleanup para detener el polling al salir
+ * Esta pantalla solo muestra WAITING.
+ *
+ * Cuando el gateway informa BUYING, significa que el scheduler ya sacó
+ * al usuario de waiting_queue y compra-service creó su sesión en
+ * buying:sessions.
  */
 
 const QueuePage = (() => {
@@ -48,10 +45,7 @@ const QueuePage = (() => {
               <span class="label">Personas esperando</span>
               <span class="value" id="queue-total">—</span>
             </div>
-            <div class="card-row">
-              <span class="label">Comprando ahora</span>
-              <span class="value" id="queue-buying">—</span>
-            </div>
+
             <div class="card-row">
               <span class="label">Estado</span>
               <span class="badge badge-waiting" id="queue-badge">
@@ -71,38 +65,34 @@ const QueuePage = (() => {
       </div>
     `;
 
-    // Cargar stats generales del sistema en paralelo
     cargarStats();
 
-    // Iniciar polling de estado
     const poll = Polling.create({
-      fn:        () => API.obtenerEstado(userId),
-      interval:  2500,
-      onSuccess: (data) => manejarEstado(data, userId),
-      onError:   (err, count) => manejarErrorPolling(err, count),
+      fn: () => API.obtenerEstado(userId),
+      interval: 2500,
       maxErrors: 5,
+      onSuccess: (data) => manejarEstado(data),
+      onError: (err, count) => manejarErrorPolling(count),
     });
 
     poll.start();
 
-    // Retornar cleanup: el router lo llama al cambiar de página
     return () => poll.stop();
   }
 
-  // ─── Handlers de estado ──────────────────────────────────────
-
-  function manejarEstado(data, userId) {
+  function manejarEstado(data) {
     if (!data) return;
 
     switch (data.status) {
-
       case 'WAITING':
         actualizarUI(data.position, data.totalWaiting);
         break;
 
       case 'BUYING':
-        // Guardar ticketId en sesión antes de navegar (Opción A)
-        Router.Session.set({ ticketId: data.ticketId });
+        Router.Session.set({
+          ticketId: data.ticketId,
+          ttlRemaining: data.ttlRemaining,
+        });
         Router.navigate('/buying');
         break;
 
@@ -114,15 +104,46 @@ const QueuePage = (() => {
         Router.navigate('/success');
         break;
 
+      case 'REJECTED':
+        Router.navigate('/rejected');
+        break;
+
       case 'NOT_FOUND':
-        // El userId no existe en el backend → volver al inicio
         Router.Session.clear();
         Router.navigate('/');
+        break;
+
+      default:
         break;
     }
   }
 
-  function manejarErrorPolling(err, count) {
+  function actualizarUI(posicion, total) {
+    const elPos = document.getElementById('queue-pos');
+    const elTotal = document.getElementById('queue-total');
+    const elBar = document.getElementById('queue-bar');
+    const errorContainer = document.getElementById('error-container');
+
+    if (!elPos) return;
+
+    elPos.textContent = posicion ?? '—';
+
+    if (elTotal) {
+      elTotal.textContent = total ?? '—';
+    }
+
+    if (posicion && total && total > 0) {
+      const pct = Math.max(0, Math.min(100, ((total - posicion) / total) * 100));
+      elBar.style.width = `${pct.toFixed(1)}%`;
+      elBar.setAttribute('aria-valuenow', pct.toFixed(0));
+    }
+
+    if (errorContainer) {
+      errorContainer.innerHTML = '';
+    }
+  }
+
+  function manejarErrorPolling(count) {
     const errorContainer = document.getElementById('error-container');
     if (!errorContainer) return;
 
@@ -134,43 +155,21 @@ const QueuePage = (() => {
             <line x1="8" y1="5" x2="8" y2="8.5"/>
             <circle cx="8" cy="11" r="0.5" fill="currentColor"/>
           </svg>
-          Sin conexión con el servidor (intento ${count}).
-          Tu lugar en la cola está reservado. Reconnectando…
+          Sin conexión con el servidor. Tu lugar en la cola debería mantenerse.
         </div>
       `;
     }
-  }
-
-  // ─── Actualización de UI ─────────────────────────────────────
-
-  function actualizarUI(posicion, total) {
-    const elPos    = document.getElementById('queue-pos');
-    const elTotal  = document.getElementById('queue-total');
-    const elBar    = document.getElementById('queue-bar');
-    const errorContainer = document.getElementById('error-container');
-
-    if (!elPos) return; // La página ya se desmontó
-
-    elPos.textContent   = posicion ?? '—';
-    if (elTotal) elTotal.textContent = total ?? '—';
-
-    // Barra de progreso: cuánto avanzaste desde el total inicial
-    if (posicion && total && total > 0) {
-      const pct = Math.max(0, Math.min(100, ((total - posicion) / total) * 100));
-      elBar.style.width = `${pct.toFixed(1)}%`;
-      elBar.setAttribute('aria-valuenow', pct.toFixed(0));
-    }
-
-    // Limpiar errores previos si volvió la conexión
-    if (errorContainer) errorContainer.innerHTML = '';
   }
 
   async function cargarStats() {
     const { data } = await API.obtenerStats();
     if (!data) return;
 
-    const elBuying = document.getElementById('queue-buying');
-    if (elBuying) elBuying.textContent = data.buying ?? '—';
+    const elTotal = document.getElementById('queue-total');
+
+    if (elTotal && data.waiting !== undefined) {
+      elTotal.textContent = data.waiting;
+    }
   }
 
   return { render };

@@ -1,5 +1,6 @@
 package com.tickets.compra.service;
 
+import com.tickets.compra.client.SystemParametersClient;
 import com.tickets.compra.dto.QueueActivationResponseDTO;
 import com.tickets.compra.entity.EventLog;
 import com.tickets.compra.entity.QueueEntry;
@@ -21,45 +22,61 @@ import java.util.UUID;
 @Service
 public class QueueActivationService {
 
+    private static final long DEFAULT_PURCHASE_TTL_SECONDS = 600L;
+
     private final QueueEntryRepository queueEntryRepository;
     private final TicketRepository ticketRepository;
     private final EventLogRepository eventLogRepository;
+    private final ActiveBuyingRedisService activeBuyingRedisService;
+    private final SystemParametersClient systemParametersClient;
 
     public QueueActivationService(
             QueueEntryRepository queueEntryRepository,
             TicketRepository ticketRepository,
-            EventLogRepository eventLogRepository) {
+            EventLogRepository eventLogRepository,
+            ActiveBuyingRedisService activeBuyingRedisService,
+            SystemParametersClient systemParametersClient
+    ) {
         this.queueEntryRepository = queueEntryRepository;
         this.ticketRepository = ticketRepository;
         this.eventLogRepository = eventLogRepository;
+        this.activeBuyingRedisService = activeBuyingRedisService;
+        this.systemParametersClient = systemParametersClient;
     }
 
     /**
-     * Mueve un usuario de WAITING a BUYING y le reserva un ticket.
-     * Llamado exclusivamente por el Scheduler.
+     * Activa una ventana de compra.
      *
-     * Atomicidad: la búsqueda del ticket con lock pesimista y la actualización
-     * de QueueEntry ocurren en la misma transacción. Si cualquier paso falla,
-     * rollback completo — no queda estado inconsistente.
-     *
-     * Idempotente: si el usuario ya está en BUYING devuelve su ticket actual
-     * sin crear registros nuevos.
+     * Importante:
+     * - La cola de espera sigue siendo de queue-service/scheduler-service.
+     * - compra-service NO toca waiting_queue.
+     * - El usuario que ya puede comprar se guarda en Redis HASH buying:sessions.
      */
     @Transactional
     public QueueActivationResponseDTO activate(UUID userId) {
 
-        // 1. Buscar QueueEntry del usuario
         QueueEntry queueEntry = queueEntryRepository.findByUserId(userId)
                 .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND, "QueueEntry no encontrada para: " + userId));
+                        HttpStatus.NOT_FOUND,
+                        "QueueEntry no encontrada para: " + userId
+                ));
 
-        // 2. Idempotencia: si ya está en BUYING devolver el ticket que tiene reservado
         if (queueEntry.getStatus() == QueueStatus.BUYING) {
             Ticket ticketActual = ticketRepository
                     .findFirstByStatusAndReservedBy(TicketStatus.RESERVED, userId)
                     .orElseThrow(() -> new ResponseStatusException(
                             HttpStatus.CONFLICT,
-                            "Usuario en BUYING pero sin ticket reservado. Estado inconsistente."));
+                            "Usuario en BUYING pero sin ticket reservado."
+                    ));
+
+            if (activeBuyingRedisService.findSession(userId).isEmpty()) {
+                activeBuyingRedisService.putSession(
+                        userId,
+                        ticketActual.getId(),
+                        getPurchaseTtlSeconds()
+                );
+            }
+
             return QueueActivationResponseDTO.builder()
                     .userId(userId)
                     .ticketId(ticketActual.getId())
@@ -68,31 +85,37 @@ public class QueueActivationService {
                     .build();
         }
 
-        // 3. Validar que el usuario esté en WAITING
         if (queueEntry.getStatus() != QueueStatus.WAITING) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "El usuario no está en WAITING. Estado actual: " + queueEntry.getStatus());
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "El usuario no está en WAITING. Estado actual: "
+                            + queueEntry.getStatus()
+            );
         }
 
-        // 4. Buscar ticket disponible con lock pesimista (FOR UPDATE SKIP LOCKED)
-        //    Si no hay tickets lanza 409 — el Scheduler no debe reintentar este ciclo
         Ticket ticket = ticketRepository.findFirstAvailableWithLock()
                 .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.CONFLICT, "No hay tickets disponibles."));
+                        HttpStatus.CONFLICT,
+                        "No hay tickets disponibles."
+                ));
 
-        // 5. Reservar ticket para este usuario
         ticket.setStatus(TicketStatus.RESERVED);
         ticket.setReservedBy(userId);
         ticketRepository.save(ticket);
 
-        // 6. QueueEntry -> BUYING (@PreUpdate maneja updatedAt)
         queueEntry.setStatus(QueueStatus.BUYING);
         queueEntryRepository.save(queueEntry);
 
-        // 7. EventLog
+        activeBuyingRedisService.putSession(
+                userId,
+                ticket.getId(),
+                getPurchaseTtlSeconds()
+        );
+
         Map<String, Object> payload = new HashMap<>();
         payload.put("userId", userId.toString());
         payload.put("ticketId", ticket.getId());
+        payload.put("redisHash", ActiveBuyingRedisService.BUYING_HASH_KEY);
 
         EventLog log = new EventLog();
         log.setUserId(userId);
@@ -106,5 +129,16 @@ public class QueueActivationService {
                 .status("BUYING")
                 .message("Usuario activado para compra.")
                 .build();
+    }
+
+    private long getPurchaseTtlSeconds() {
+        try {
+            String value = systemParametersClient.get("PURCHASE_TTL_SECONDS");
+            return value != null
+                    ? Long.parseLong(value)
+                    : DEFAULT_PURCHASE_TTL_SECONDS;
+        } catch (Exception e) {
+            return DEFAULT_PURCHASE_TTL_SECONDS;
+        }
     }
 }

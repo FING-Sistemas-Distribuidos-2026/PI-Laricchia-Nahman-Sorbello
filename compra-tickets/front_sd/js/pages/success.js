@@ -1,8 +1,7 @@
 /**
  * success.js — Pantalla de compra exitosa.
  *
- * Muestra la confirmación final con los datos de la compra.
- * Limpia la sesión para evitar reingresos accidentales.
+ * Solo se llega acá si compra-service respondió PURCHASED.
  */
 
 const SuccessPage = (() => {
@@ -10,9 +9,8 @@ const SuccessPage = (() => {
   function render(container, Session) {
     const { userId, ticketId, purchaseData } = Session.get();
 
-    // Datos a mostrar (purchaseData puede no existir si llegamos por polling de estado)
     const displayTicketId = purchaseData?.ticketId ?? ticketId ?? '—';
-    const displayUserId   = userId ? `${userId.slice(0, 8)}…` : '—';
+    const displayUserId = userId ? `${userId.slice(0, 8)}…` : '—';
 
     container.innerHTML = `
       <div class="page" id="success-page">
@@ -43,10 +41,12 @@ const SuccessPage = (() => {
               Confirmado
             </span>
           </div>
+
           <div class="card-row">
             <span class="label">N.° de ticket</span>
             <span class="value">${displayTicketId}</span>
           </div>
+
           <div class="card-row">
             <span class="label">ID de usuario</span>
             <span class="value">${displayUserId}</span>
@@ -65,7 +65,6 @@ const SuccessPage = (() => {
       </div>
     `;
 
-    // Limpiar sesión: la compra está hecha, no hay nada más que hacer
     Session.clear();
   }
 

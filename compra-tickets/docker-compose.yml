@@ -15,7 +15,7 @@ services:
     environment:
       POSTGRES_DB: tickets
       POSTGRES_USER: gorditos
-      POSTGRES_PASSWORD: cocacola
+      POSTGRES_PASSWORD:  cambiar
 
     ports:
       - "5432:5432"

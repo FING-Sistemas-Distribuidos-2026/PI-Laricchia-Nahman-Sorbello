@@ -39,6 +39,8 @@ El parámetro `MAX_CONCURRENT_BUYERS = n` indica que puede haber hasta `n` usuar
 
 ## Flujo paso a paso
 
+![Flujo de Compra](./Flujo_de_Compra.png)
+
 1. El usuario accede al frontend en `http://10.66.1.52`.
 
 2. Al hacer click en **"Quiero comprar mi entrada"**, el frontend crea un usuario mediante el API Gateway:

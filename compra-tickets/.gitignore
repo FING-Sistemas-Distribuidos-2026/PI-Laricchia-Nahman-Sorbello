@@ -1,0 +1,8 @@
+
+# Kubernetes secrets reales
+k8s/secrets/*secret*.yaml
+!k8s/secrets/*.example.yaml
+
+# Entornos / credenciales
+.env
+*.kubeconfig

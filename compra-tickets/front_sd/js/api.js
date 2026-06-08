@@ -13,7 +13,7 @@
 
 const API = (() => {
 
-  const BASE = 'http://localhost:8080';
+  const BASE = 'http://10.66.1.51';
 
   async function request(url, options = {}) {
     try {

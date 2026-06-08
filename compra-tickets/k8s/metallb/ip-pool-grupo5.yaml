@@ -1,0 +1,17 @@
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: grupo5-pool
+  namespace: metallb-system
+spec:
+  addresses:
+    - 10.66.1.51-10.66.1.60
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: grupo5-l2
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+    - grupo5-pool

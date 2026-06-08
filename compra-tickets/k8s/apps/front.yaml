@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: front-sd
+  namespace: grupo5-tickets
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: front-sd
+  template:
+    metadata:
+      labels:
+        app: front-sd
+    spec:
+      containers:
+        - name: front-sd
+          image: martupiru/front-sd:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: front-sd
+  namespace: grupo5-tickets
+spec:
+  type: LoadBalancer
+  loadBalancerIP: 10.66.1.52
+  selector:
+    app: front-sd
+  ports:
+    - port: 80
+      targetPort: 80
